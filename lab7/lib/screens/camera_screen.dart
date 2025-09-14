@@ -10,8 +10,8 @@ class CameraPage extends StatefulWidget {
 }
 
 class CameraPageState extends State<CameraPage> {
-  late CameraController controller;
-  late Future<void> initializeControllerFuture;
+  CameraController? controller;
+  Future<void>? initializeControllerFuture;
   bool isCameraReady = false;
 
   @override
@@ -21,42 +21,59 @@ class CameraPageState extends State<CameraPage> {
   }
 
   Future<void> initializeCamera() async {
-    final cameras = await availableCameras();
-    final firstCamera = cameras.first;
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        throw Exception('Камера не найдена');
+      }
 
-    controller = CameraController(
-      firstCamera,
-      ResolutionPreset.medium,
-    );
+      final firstCamera = cameras.first;
 
-    initializeControllerFuture = controller.initialize().then((_) {
-      if (!mounted) return;
-      setState(() => isCameraReady = true);
-    });
+      controller = CameraController(firstCamera, ResolutionPreset.medium);
+
+      initializeControllerFuture = controller!.initialize().then((_) {
+        if (!mounted) return;
+        setState(() => isCameraReady = true);
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Ошибка инициализации камеры: ${e.toString()}'),
+          ),
+        );
+      }
+    }
   }
 
   @override
   void dispose() {
-    controller.dispose();
+    controller?.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Фотография неба'),
-      ),
-      body: FutureBuilder<void>(
-        future: initializeControllerFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.done) {
-            return CameraPreview(controller);
-          } else {
-            return const Center(child: CircularProgressIndicator());
-          }
-        },
-      ),
+      appBar: AppBar(title: const Text('Фотография неба')),
+      body: initializeControllerFuture == null
+          ? const Center(child: CircularProgressIndicator())
+          : FutureBuilder<void>(
+              future: initializeControllerFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.done) {
+                  if (controller != null) {
+                    return CameraPreview(controller!);
+                  } else {
+                    return const Center(
+                      child: Text('Ошибка инициализации камеры'),
+                    );
+                  }
+                } else {
+                  return const Center(child: CircularProgressIndicator());
+                }
+              },
+            ),
       floatingActionButton: FloatingActionButton(
         onPressed: isCameraReady ? takePicture : null,
         child: const Icon(Icons.camera_alt),
@@ -66,8 +83,12 @@ class CameraPageState extends State<CameraPage> {
 
   Future<void> takePicture() async {
     try {
-      await initializeControllerFuture;
-      final image = await controller.takePicture();
+      if (initializeControllerFuture == null || controller == null) {
+        throw Exception('Камера не инициализирована');
+      }
+
+      await initializeControllerFuture!;
+      final image = await controller!.takePicture();
 
       if (!mounted) return;
 
@@ -88,9 +109,9 @@ class CameraPageState extends State<CameraPage> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: ${e.toString()}')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Ошибка: ${e.toString()}')));
       }
     }
   }
